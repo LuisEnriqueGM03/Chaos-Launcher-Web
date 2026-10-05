@@ -36,26 +36,69 @@ export interface StartImportParams {
   onUploadProgress?: (percent: number) => void;
 }
 
-export const modpackImportApi = {
-  /** Sube el ZIP y devuelve el id del trabajo en segundo plano. */
-  async start(params: StartImportParams): Promise<{ jobId: string }> {
-    const form = new FormData();
-    form.append('githubToken', params.githubToken);
-    if (params.modpackTag) form.append('modpackTag', params.modpackTag);
-    if (params.repoName) form.append('repoName', params.repoName);
-    if (params.serverIp) form.append('serverIp', params.serverIp);
-    if (params.serverPort) form.append('serverPort', params.serverPort);
-    // El archivo va al final para que el servidor ya tenga los campos de texto al recibirlo
-    form.append('file', params.file);
+const CHUNK_RETRIES = 4;
 
-    return apiClient.post('/modpacks/import', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 0, // el ZIP puede pesar cientos de MB
-      onUploadProgress: (e) => {
-        if (params.onUploadProgress && e.total) {
-          params.onUploadProgress(Math.round((e.loaded / e.total) * 100));
+const FILE_CHANGED_MESSAGE =
+  'No se pudo leer el archivo: cambió, se movió o se está sincronizando desde que lo elegiste. ' +
+  'Cópialo a una carpeta local estable (p. ej. el Escritorio), vuelve a elegirlo e inténtalo de nuevo.';
+
+function wait(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+export const modpackImportApi = {
+  /**
+   * Sube el ZIP en partes (cada una por debajo del límite de 100 MB de Cloudflare y leída del disco en el
+   * momento de enviarla, sin una subida única larga que el navegador pueda abortar) y lanza la importación.
+   */
+  async start(params: StartImportParams): Promise<{ jobId: string }> {
+    const { file } = params;
+
+    const { uploadId, chunkSize } = (await apiClient.post('/modpacks/import/upload', {
+      fileName: file.name,
+      size: file.size,
+    })) as { uploadId: string; chunkSize: number };
+
+    const totalChunks = Math.ceil(file.size / chunkSize);
+    let sentBytes = 0;
+
+    for (let index = 0; index < totalChunks; index++) {
+      const blob = file.slice(index * chunkSize, Math.min(file.size, (index + 1) * chunkSize));
+
+      let data: ArrayBuffer;
+      try {
+        data = await blob.arrayBuffer();
+      } catch {
+        throw new Error(FILE_CHANGED_MESSAGE);
+      }
+
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await apiClient.put(`/modpacks/import/upload/${uploadId}/chunk?index=${index}`, data, {
+            headers: { 'Content-Type': 'application/octet-stream' },
+            timeout: 0,
+            onUploadProgress: (e) => {
+              params.onUploadProgress?.(Math.min(99, Math.round(((sentBytes + e.loaded) / file.size) * 100)));
+            },
+          });
+          break;
+        } catch (err) {
+          // El servidor ignora partes repetidas, así que reintentar es seguro
+          if (attempt >= CHUNK_RETRIES) throw err;
+          await wait(1500 * attempt);
         }
-      },
+      }
+
+      sentBytes += data.byteLength;
+      params.onUploadProgress?.(Math.round((sentBytes / file.size) * 100));
+    }
+
+    return apiClient.post(`/modpacks/import/upload/${uploadId}/start`, {
+      githubToken: params.githubToken,
+      modpackTag: params.modpackTag,
+      repoName: params.repoName,
+      serverIp: params.serverIp,
+      serverPort: params.serverPort,
     });
   },
 
