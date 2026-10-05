@@ -9,7 +9,6 @@ const COMMAND = `winget install ${ENV.WINGET_PACKAGE_ID}`;
 /** Instalación alternativa con winget (sin pasar por el navegador, por lo que Windows no muestra el aviso de SmartScreen). */
 export const WingetInstall: React.FC = () => {
   const [copied, setCopied] = useState(false);
-  const live = ENV.WINGET_LIVE;
 
   const handleCopy = async () => {
     try {
@@ -32,9 +31,8 @@ export const WingetInstall: React.FC = () => {
         <code className="font-mono text-sm sm:text-base text-white truncate select-all">{COMMAND}</code>
         <button
           onClick={handleCopy}
-          disabled={!live}
-          className="flex items-center gap-2 px-3 py-2 text-[11px] sm:text-xs font-minecraft text-stone-200 hover:text-white transition cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-          title={live ? 'Copiar comando' : 'Disponible cuando Microsoft apruebe el paquete'}
+          className="flex items-center gap-2 px-3 py-2 text-[11px] sm:text-xs font-minecraft text-stone-200 hover:text-white transition cursor-pointer shrink-0"
+          title="Copiar comando"
         >
           {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
           <span>{copied ? 'COPIADO' : 'COPIAR'}</span>
