@@ -1,0 +1,133 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPERADMIN
+  CREATOR
+  USER
+}
+
+enum LoaderType {
+  VANILLA
+  FABRIC
+  FORGE
+  NEOFORGE
+}
+
+model User {
+  id        String    @id @default(uuid())
+  username  String    @unique
+  password  String
+  role      Role      @default(CREATOR)
+  skinUrl   String?   @default("https://mc-heads.net/avatar/Steve/100")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  modpacks  Modpack[]
+
+  @@map("users")
+}
+
+model Modpack {
+  id               String       @id @default(uuid())
+  name             String
+  tag              String       @unique
+  description      String?
+  accentColor      String       @default("#ff4500")
+  iconUrl          String?
+  wallpaperUrl     String?
+  titleImageUrl    String?
+  titleDisplayMode String       @default("BOTH")
+  titleText        String?
+  
+  // Minecraft Server Info
+  serverIp         String
+  serverPort       Int          @default(25565)
+  
+  // Versions & Loader
+  version          String       @default("1.0.0")
+  minecraftVersion String
+  loaderType       LoaderType   @default(NEOFORGE)
+  loaderVersion    String?
+  
+  // Hardware Requirements
+  recommendedRam   Int          @default(6144)
+  minRam           Int?         @default(4096)
+  
+  // GitHub & Distribution
+  githubRepo       String?
+  githubBranch     String       @default("main")
+  downloadUrl      String?
+  forceUpdate      Boolean      @default(true)
+  
+  // Author & Ordering
+  authorId         String?
+  author           User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  order            Int          @default(0)
+  isActive         Boolean      @default(true)
+  
+  // Modular Features Configuration
+  hasOptionalMods  Boolean      @default(true)
+  hasRules         Boolean      @default(false)
+  rulesContent     String?      @db.Text
+  hasDiscord       Boolean      @default(false)
+  discordUrl       String?
+  hasChangelog     Boolean      @default(true)
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  versions         ModpackVersion[]
+  optionalMods     OptionalMod[]
+
+  @@map("modpacks")
+}
+
+model ModpackVersion {
+  id          String        @id @default(uuid())
+  modpackId   String
+  version     String
+  changelog   String[]      @default([])
+  fileSizeMb  Float?
+  sha1        String?
+  isCurrent   Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+
+  modpack     Modpack       @relation(fields: [modpackId], references: [id], onDelete: Cascade)
+  files       ModpackFile[]
+
+  @@map("modpack_versions")
+}
+
+model OptionalMod {
+  id             String   @id @default(uuid())
+  modpackId      String
+  modId          String
+  name           String
+  file           String
+  description    String
+  defaultEnabled Boolean  @default(true)
+
+  modpack        Modpack  @relation(fields: [modpackId], references: [id], onDelete: Cascade)
+
+  @@map("optional_mods")
+}
+
+model ModpackFile {
+  id          String         @id @default(uuid())
+  versionId   String
+  path        String
+  sha1        String
+  size        Int
+  downloadUrl String?
+
+  version     ModpackVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@map("modpack_files")
+}

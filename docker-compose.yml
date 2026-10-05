@@ -1,0 +1,153 @@
+# ==========================================================================
+# CHAOS LAUNCHER - Backend + Frontend + PostgreSQL + auto-actualización
+#
+#   Primera vez:   cp .env.example .env   (y rellena los valores obligatorios)
+#   Arrancar:      docker compose up -d
+#   Ver logs:      docker compose logs -f
+#   Local (sin imágenes publicadas, construye desde el código):
+#                  docker compose up -d --build
+#
+# Watchtower vigila las imágenes del backend y del front en GHCR: cuando GitHub
+# Actions publica una versión nueva, la descarga y reinicia solo ese servicio.
+# ==========================================================================
+name: chaos-launcher
+
+services:
+  # ------------------------------------------------------------------------
+  # Base de datos (no se actualiza sola: sin etiqueta de Watchtower)
+  # ------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: chaos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chaos_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el archivo .env}
+      POSTGRES_DB: ${POSTGRES_DB:-chaos_launcher_db}
+    ports:
+      # Solo accesible desde esta máquina (para herramientas de administración)
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chaos_user} -d ${POSTGRES_DB:-chaos_launcher_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - chaos-network
+
+  # ------------------------------------------------------------------------
+  # Backend (NestJS + Prisma)
+  # ------------------------------------------------------------------------
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-luisenriquegm03}/chaos-launcher-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./ChaosLauncher-Backend
+      dockerfile: Dockerfile
+    container_name: chaos-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api/v1
+      APP_NAME: ChaosLauncher-API
+      # URL pública del backend: se guarda en las URLs de las imágenes subidas
+      APP_URL: ${BACKEND_PUBLIC_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chaos_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chaos_launcher_db}?schema=public
+      SUPERADMIN_USERNAME: ${SUPERADMIN_USERNAME:-admin}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:?Define SUPERADMIN_PASSWORD en el archivo .env}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET (mínimo 32 caracteres) en el archivo .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      # Orígenes que pueden llamar al API desde un navegador (separados por coma). No uses *
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_API_URL: https://api.github.com
+      CURSEFORGE_API_KEY: ${CURSEFORGE_API_KEY:-}
+      STATUS_CACHE_TTL_SECONDS: ${STATUS_CACHE_TTL_SECONDS:-30}
+      UPLOAD_DIR: /usr/src/app/uploads
+      STATIC_SERVE_PATH: /static
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    volumes:
+      - uploads_data:/usr/src/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/v1/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      - chaos-network
+
+  # ------------------------------------------------------------------------
+  # Frontend (Next.js). El navegador llama a /api/v1 de este mismo sitio y
+  # Next lo reenvía al backend interno (http://backend:3000).
+  # ------------------------------------------------------------------------
+  front:
+    image: ghcr.io/${GHCR_OWNER:-luisenriquegm03}/chaos-launcher-front:${IMAGE_TAG:-latest}
+    build:
+      context: ./ChaosLauncher-Front
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-ChaosLauncher Web Studio}
+        NEXT_PUBLIC_DEFAULT_SERVER_IP: ${NEXT_PUBLIC_DEFAULT_SERVER_IP:-}
+        NEXT_PUBLIC_LAUNCHER_REPO: ${NEXT_PUBLIC_LAUNCHER_REPO:-LuisEnriqueGM03/Chaos-Launcher-Esc}
+        NEXT_PUBLIC_WINGET_PACKAGE_ID: ${NEXT_PUBLIC_WINGET_PACKAGE_ID:-ChaosStudio.ChaosLauncher}
+        NEXT_PUBLIC_WINGET_LIVE: ${NEXT_PUBLIC_WINGET_LIVE:-false}
+        BACKEND_INTERNAL_URL: http://backend:3000
+    container_name: chaos-front
+    restart: unless-stopped
+    ports:
+      - "${FRONT_PORT:-3001}:3001"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      - chaos-network
+
+  # ------------------------------------------------------------------------
+  # Auto-actualización: comprueba GHCR cada WATCHTOWER_POLL_INTERVAL segundos y,
+  # si hay una imagen nueva del backend o del front, la descarga y la reinicia.
+  # ------------------------------------------------------------------------
+  watchtower:
+    image: nickfedor/watchtower:latest
+    container_name: chaos-watchtower
+    restart: unless-stopped
+    environment:
+      # Solo actualiza los contenedores con la etiqueta watchtower.enable=true
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-60}
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      # Credenciales de GHCR (solo si las imágenes son privadas)
+      REPO_USER: ${GHCR_USER:-}
+      REPO_PASS: ${GHCR_TOKEN:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - chaos-network
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  chaos-network:
+    driver: bridge

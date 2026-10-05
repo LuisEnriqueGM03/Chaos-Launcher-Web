@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.agents
+.env
+.env.*
+!.env.example
+npm-debug.log*
+Dockerfile
+.dockerignore
+tsconfig.tsbuildinfo
+*.md
+.idea
+.vscode

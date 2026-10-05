@@ -1,0 +1,28 @@
+# Secretos y configuración local (NUNCA subir)
+.env
+.env.*
+!.env.example
+
+# El launcher de escritorio tiene su propio repositorio
+ChaosLauncher-esc/
+
+# Dependencias y compilados
+node_modules/
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Datos locales
+uploads/
+*.log
+prisma/dev.db
+prisma/dev.db-journal
+
+# Herramientas y editores
+.agents/
+skills-lock.json
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
