@@ -283,7 +283,6 @@ export const ModpackForm: React.FC<ModpackFormProps> = ({ initialData, isEditing
 
     const payload: any = {
       name,
-      tag: tag.toLowerCase().trim(),
       description,
       accentColor,
       iconUrl: iconUrl || undefined,
@@ -303,6 +302,9 @@ export const ModpackForm: React.FC<ModpackFormProps> = ({ initialData, isEditing
       githubBranch: githubBranch || 'main',
       forceUpdate,
     };
+
+    // El tag solo se envía al crear: es inmutable (el launcher lo usa como carpeta del modpack)
+    if (!isEditing) payload.tag = tag.toLowerCase().trim();
 
     if (isEditing && initialData) {
       payload.hasOptionalMods = initialData.hasOptionalMods;
@@ -382,7 +384,7 @@ export const ModpackForm: React.FC<ModpackFormProps> = ({ initialData, isEditing
                 onChange={(e) => {
                   setName(e.target.value);
                   if (!isEditing && !tag) {
-                    setTag(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'));
+                    setTag(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 64));
                   }
                 }}
                 required
@@ -392,8 +394,9 @@ export const ModpackForm: React.FC<ModpackFormProps> = ({ initialData, isEditing
                 label="Tag / Slug Único *"
                 placeholder="Ej: mimic-mc"
                 value={tag}
-                onChange={(e) => setTag(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))}
-                helperText="Identificador único para el Launcher y URLs"
+                onChange={(e) => setTag(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '').slice(0, 64))}
+                maxLength={64}
+                helperText={isEditing ? 'Identificador del modpack en el Launcher: no se puede cambiar' : 'Identificador único para el Launcher y URLs (no se podrá cambiar después)'}
                 required
                 disabled={isEditing}
               />

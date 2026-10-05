@@ -126,7 +126,14 @@ export class ModpacksService {
     await assertModpackOwner(this.prisma, tag, user);
     const modpack = await this.findOneByTag(tag);
 
-    const { optionalMods, changelog, ...modpackData } = dto;
+    // El tag es la identidad del modpack: el launcher lo usa como carpeta y para recordar la versión instalada.
+    // Cambiarlo dejaría huérfana la instalación de todos los jugadores, así que es inmutable.
+    const { optionalMods, changelog, tag: requestedTag, ...modpackData } = dto;
+    if (requestedTag !== undefined && requestedTag !== modpack.tag) {
+      throw new BadRequestException(
+        `El tag de un modpack no se puede cambiar (actual: "${modpack.tag}"). Crea un modpack nuevo si necesitas otro identificador.`,
+      );
+    }
 
     // Si se pasa una versión nueva diferente a la actual
     if (dto.version && dto.version !== modpack.version) {

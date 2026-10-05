@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { LoaderType } from '@prisma/client';
@@ -45,9 +46,14 @@ export class CreateModpackDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: 'mimic-mc', description: 'Tag o slug único del modpack' })
+  @ApiProperty({
+    example: 'mimic-mc',
+    description:
+      'Tag o slug único del modpack. Es el identificador que usa el launcher como nombre de carpeta, por eso no se puede cambiar después.',
+  })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(64, { message: 'El tag admite como máximo 64 caracteres' })
   @Matches(/^[a-z0-9-_]+$/, {
     message: 'El tag debe contener solo letras minúsculas, números, guiones o guiones bajos',
   })

@@ -11,6 +11,7 @@ export class ImportModpackDto {
   @ApiPropertyOptional({ description: 'Tag de un modpack existente que se quiere actualizar', example: 'mimic-mc' })
   @IsString()
   @IsOptional()
+  @MaxLength(64, { message: 'El tag admite como máximo 64 caracteres' })
   @Matches(/^[a-z0-9-_]+$/, { message: 'El tag solo admite minúsculas, números, guiones y guiones bajos' })
   modpackTag?: string;
 

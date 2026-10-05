@@ -1,6 +1,8 @@
 import { ValidationPipe } from '@nestjs/common';
 import { RegisterDto } from '../modules/auth/dto/register.dto';
 import { AddVersionDto } from '../modules/manifests/dto/add-version.dto';
+import { CreateModpackDto } from '../modules/modpacks/dto/create-modpack.dto';
+import { ImportModpackDto } from '../modules/modpack-import/dto/import-modpack.dto';
 
 // Misma configuración que main.ts
 const pipe = new ValidationPipe({ whitelist: true, transform: true, transformOptions: { enableImplicitConversion: true } });
@@ -42,5 +44,29 @@ describe('AddVersionDto', () => {
 
   it('rechaza sha1 malformado', async () => {
     await expect(run(AddVersionDto, { version: '1', changelog: [], files: [{ path: 'a', sha1: 'zz', size: 1 }] })).rejects.toBeDefined();
+  });
+});
+
+describe('tag del modpack (identificador compartido con el launcher)', () => {
+  const base = { name: 'Mimic MC', serverIp: 'mimic.test', minecraftVersion: '1.21.1' };
+
+  it('acepta un tag en minúsculas, números, guiones y guiones bajos', async () => {
+    const out: any = await run(CreateModpackDto, { ...base, tag: 'mimic-pm_2' });
+    expect(out.tag).toBe('mimic-pm_2');
+  });
+
+  it('rechaza mayúsculas, espacios y puntos (el launcher los convertiría en otra carpeta)', async () => {
+    for (const tag of ['Mimic-PM', 'mimic pm', 'mimic.pm']) {
+      await expect(run(CreateModpackDto, { ...base, tag })).rejects.toBeDefined();
+    }
+  });
+
+  it('rechaza tags de más de 64 caracteres (el launcher no los aceptaría)', async () => {
+    await expect(run(CreateModpackDto, { ...base, tag: 'a'.repeat(65) })).rejects.toBeDefined();
+    await expect(run(CreateModpackDto, { ...base, tag: 'a'.repeat(64) })).resolves.toBeDefined();
+  });
+
+  it('la importación aplica el mismo límite al tag de un modpack existente', async () => {
+    await expect(run(ImportModpackDto, { githubToken: 'x', modpackTag: 'a'.repeat(65) })).rejects.toBeDefined();
   });
 });
